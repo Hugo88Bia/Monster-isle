@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Monster Isles</title>
+<style>
+  :root{
+    --gb-darkest:#0f380f; --gb-dark:#306230; --gb-light:#8bac0f; --gb-lightest:#9bbc0f;
+    --ink:#0f380f; --paper:#e8f0c8; --shadow:#5a7a1a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:#1a1a12;overflow:hidden;
+    font-family:"Courier New",monospace;color:var(--ink);
+    display:flex;align-items:center;justify-content:center;user-select:none;}
+  #game{width:min(100vw,480px);height:min(100vh,860px);display:flex;flex-direction:column;
+    background:#c4cfa1;position:relative;touch-action:none;}
+  #screen{position:relative;width:100%;aspect-ratio:1/1;background:var(--gb-lightest);
+    image-rendering:pixelated;border-bottom:6px solid #1a1a12;}
+  canvas{width:100%;height:100%;image-rendering:pixelated;display:block;}
+
+  /* Dialogue / battle text box */
+  #box{position:absolute;left:3%;right:3%;bottom:3%;min-height:22%;background:var(--paper);
+    border:4px solid var(--ink);border-radius:6px;padding:10px 12px;
+    box-shadow:0 4px 0 rgba(0,0,0,.35);font-size:15px;line-height:1.35;display:none;z-index:6;}
+  #box .more{position:absolute;right:8px;bottom:6px;animation:blink 1s steps(1) infinite;font-weight:bold;}
+  @keyframes blink{50%{opacity:0}}
+
+  /* Menus */
+  .menu{position:absolute;background:var(--paper);border:4px solid var(--ink);border-radius:6px;
+    box-shadow:0 4px 0 rgba(0,0,0,.35);z-index:7;padding:6px;display:none;}
+  .menu .row{padding:6px 22px 6px 10px;font-size:15px;white-space:nowrap;position:relative;}
+  .menu .row.sel::before{content:"▶";position:absolute;left:-2px;}
+  #mainMenu{top:5%;right:4%;min-width:120px;}
+  #battleMenu{left:3%;right:3%;bottom:3%;display:none;}
+  #battleMenu .grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+  #battleMenu .row{padding:8px 10px 8px 24px;}
+
+  /* HUD in battle */
+  #battleHud{position:absolute;inset:0;z-index:4;display:none;pointer-events:none;}
+  .hpbox{position:absolute;background:var(--paper);border:3px solid var(--ink);border-radius:6px;
+    padding:6px 8px;min-width:44%;box-shadow:0 3px 0 rgba(0,0,0,.3);}
+  .hpbox .name{font-size:13px;font-weight:bold;display:flex;justify-content:space-between;}
+  .hpbar{height:8px;background:#3a4a1a;border:2px solid var(--ink);border-radius:4px;margin-top:4px;overflow:hidden;}
+  .hpbar > i{display:block;height:100%;background:var(--gb-dark);transition:width .35s;}
+  #foeHud{top:6%;left:4%;}
+  #meHud{bottom:30%;right:4%;}
+  .hpbox .lvl{font-size:11px;}
+  .hpbox .hpnum{font-size:11px;text-align:right;margin-top:2px;}
+
+  /* Title */
+  #title{position:absolute;inset:0;background:var(--gb-dark);color:var(--paper);z-index:9;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;}
+  #title h1{font-size:34px;margin:0;letter-spacing:2px;text-shadow:3px 3px 0 var(--gb-darkest);}
+  #title p{margin:6px 0 26px;font-size:13px;opacity:.9;}
+  #title button, .btn{font-family:inherit;font-size:16px;background:var(--paper);color:var(--ink);
+    border:4px solid var(--gb-darkest);border-radius:6px;padding:10px 20px;cursor:pointer;
+    box-shadow:0 4px 0 var(--gb-darkest);font-weight:bold;}
+  #title button:active{transform:translateY(3px);box-shadow:0 1px 0 var(--gb-darkest);}
+  .badge-tag{position:absolute;top:6px;left:8px;z-index:5;font-size:12px;color:var(--gb-darkest);
+    background:rgba(232,240,200,.75);padding:2px 6px;border-radius:4px;display:none;}
+
+  /* Controls */
+  #controls{flex:1;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;gap:8px;}
+  #dpad{position:relative;width:150px;height:150px;}
+  .dbtn{position:absolute;width:50px;height:50px;background:#2b2b22;border:3px solid #000;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;color:#9bbc0f;font-size:20px;}
+  .dbtn:active{background:#3f3f30;}
+  #up{top:0;left:50px;} #down{bottom:0;left:50px;} #left{left:0;top:50px;} #right{right:0;top:50px;}
+  #dcenter{position:absolute;top:50px;left:50px;width:50px;height:50px;background:#2b2b22;border:3px solid #000;}
+  #abtns{display:flex;flex-direction:column;gap:14px;align-items:center;}
+  .abtn{width:66px;height:66px;border-radius:50%;background:#7a1f3d;color:#fff;border:3px solid #000;
+    font-size:22px;font-weight:bold;display:flex;align-items:center;justify-content:center;}
+  .abtn.b{background:#243b7a;}
+  .abtn:active{filter:brightness(1.3);}
+  .hint{position:absolute;bottom:2px;width:100%;text-align:center;font-size:10px;color:#3a3a2a;}
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="screen">
+    <canvas id="cv" width="160" height="160"></canvas>
+    <div class="badge-tag" id="badgeTag">◇ Badges: 0</div>
+
+    <div id="battleHud">
+      <div class="hpbox" id="foeHud">
+        <div class="name"><span id="foeName">FOE</span><span class="lvl" id="foeLvl">L5</span></div>
+        <div class="hpbar"><i id="foeHp" style="width:100%"></i></div>
+      </div>
+      <div class="hpbox" id="meHud">
+        <div class="name"><span id="meName">YOU</span><span class="lvl" id="meLvl">L5</span></div>
+        <div class="hpbar"><i id="meHp" style="width:100%"></i></div>
+        <div class="hpnum" id="meHpNum">20/20</div>
+      </div>
+    </div>
+
+    <div id="box"><span id="boxText"></span><span class="more" id="boxMore">▼</span></div>
+
+    <div class="menu" id="mainMenu">
+      <div class="row sel" data-i="0">MONSTERS</div>
+      <div class="row" data-i="1">BAG</div>
+      <div class="row" data-i="2">BADGES</div>
+      <div class="row" data-i="3">SAVE</div>
+      <div class="row" data-i="4">CLOSE</div>
+    </div>
+
+    <div class="menu" id="battleMenu">
+      <div class="grid" id="battleGrid"></div>
+    </div>
+
+    <div id="title">
+      <h1>MONSTER<br>ISLES</h1>
+      <p>catch • train • earn the badge</p>
+      <button id="startBtn">NEW GAME</button>
+      <div style="height:12px"></div>
+      <button id="continueBtn" style="display:none">CONTINUE</button>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div id="dpad">
+      <div class="dbtn" id="up">▲</div>
+      <div class="dbtn" id="left">◀</div>
+      <div id="dcenter"></div>
+      <div class="dbtn" id="right">▶</div>
+      <div class="dbtn" id="down">▼</div>
+    </div>
+    <div id="abtns">
+      <div class="abtn" id="btnA">A</div>
+      <div class="abtn b" id="btnB">B</div>
+      <div class="hint">A = talk/confirm · B = menu/back</div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const TILE = 16, VIEW = 10; // 10x10 tiles visible
+
+/* ---------- TYPE CHART ---------- */
+const TYPES = ["Fire","Water","Grass","Rock","Spark","Air"];
+const TYPECOL = {Fire:"#e8622a",Water:"#2f8fd8",Grass:"#4caf50",Rock:"#8a7a5a",Spark:"#f2c40f",Air:"#7fb0d8"};
+// multiplier[attacker][defender].  2 = super effective, .5 = not very, 1 = normal
+// Fire>Grass,Air | Water>Fire,Rock | Grass>Water,Rock | Rock>Fire,Spark | Spark>Water,Air | Air>Grass,Spark
+const CHART = {
+  Fire: {Fire:.5, Water:.5, Grass:2,  Rock:.5, Spark:1,  Air:2 },
+  Water:{Fire:2,  Water:.5, Grass:.5, Rock:2,  Spark:.5, Air:1 },
+  Grass:{Fire:.5, Water:2,  Grass:.5, Rock:2,  Spark:1,  Air:.5},
+  Rock: {Fire:2,  Water:.5, Grass:.5, Rock:1,  Spark:2,  Air:1 },
+  Spark:{Fire:1,  Water:2,  Grass:.5, Rock:.5, Spark:.5, Air:2 },
+  Air:  {Fire:.5, Water:1,  Grass:2,  Rock:1,  Spark:2,  Air:.5}
+};
+
+/* ---------- MOVES ---------- */
+const MOVES = {
+  // Normal starter move everyone can use
+  tackle:{name:"Tackle",type:"Air",pow:35,acc:100},
+  // Fire
+  ember:{name:"Ember",type:"Fire",pow:45,acc:100},
+  flame:{name:"Flame Burst",type:"Fire",pow:65,acc:95},
+  // Water
+  bubble:{name:"Bubble",type:"Water",pow:45,acc:100},
+  aquajet:{name:"Aqua Jet",type:"Water",pow:65,acc:95},
+  // Grass
+  vine:{name:"Vine Whip",type:"Grass",pow:45,acc:100},
+  leafblade:{name:"Leaf Blade",type:"Grass",pow:65,acc:95},
+  // Rock
+  pebble:{name:"Pebble Toss",type:"Rock",pow:45,acc:100},
+  boulder:{name:"Boulder Smash",type:"Rock",pow:65,acc:95},
+  // Spark
+  spark:{name:"Spark",type:"Spark",pow:45,acc:100},
+  zap:{name:"Zap",type:"Spark",pow:65,acc:95},
+  // Air
+  gust:{name:"Gust",type:"Air",pow:45,acc:100},
+  gale:{name:"Gale Slash",type:"Air",pow:65,acc:95}
+};
+
+/* ---------- SPECIES ---------- (your AI-art creatures)
+   img   = filename in the /creatures folder (case-sensitive on GitHub Pages!)
+   col   = fallback circle colour if the image hasn't loaded / is misnamed
+   base  = base stats  |  moves = starting moves  |  learn = {level:moveKey}
+   catch = base catch rate (lower = harder). starters are rare in wild = harder. */
+const SP = {
+  beafern:{name:"Beafern",type:"Fire",col:"#e8622a",img:"creatures/beafern.png",
+    base:{hp:25,atk:13,def:9,spd:14},moves:["tackle","ember"],learn:{7:"flame"},catch:45},
+  fintad:{name:"Fintad",type:"Water",col:"#2f8fd8",img:"creatures/fintad.png",
+    base:{hp:27,atk:10,def:12,spd:11},moves:["tackle","bubble"],learn:{7:"aquajet"},catch:45},
+  beabloom:{name:"Beabloom",type:"Grass",col:"#4caf50",img:"creatures/beabloom.png",
+    base:{hp:26,atk:11,def:12,spd:10},moves:["tackle","vine"],learn:{7:"leafblade"},catch:45},
+  bouldix:{name:"Bouldix",type:"Rock",col:"#8a7a5a",img:"creatures/bouldix.png",
+    base:{hp:30,atk:12,def:15,spd:7},moves:["tackle","pebble"],learn:{7:"boulder"},catch:45},
+  voltuff:{name:"Voltuff",type:"Spark",col:"#f2c40f",img:"creatures/voltuff.png",
+    base:{hp:23,atk:12,def:9,spd:16},moves:["tackle","spark"],learn:{7:"zap"},catch:45},
+  nimbup:{name:"Nimbup",type:"Air",col:"#7fb0d8",img:"creatures/nimbup.png",
+    base:{hp:24,atk:11,def:10,spd:15},moves:["tackle","gust"],learn:{7:"gale"},catch:45}
+};
+
+/* ---------- IMAGE LOADER ---------- */
+// Preload every creature image once. If a file is missing, ok stays false
+// and drawMon() falls back to a coloured circle so the game never breaks.
+const IMG = {};
+const IMGBASE = "";
+for(const id in SP){
+  const im = new Image();
+  im.src = IMGBASE + SP[id].img;
+  im.onload = ()=>{ IMG[id]={el:im,ok:true}; if(mode==="battle"&&B) renderBattleScene(); };
+  im.onerror = ()=>{ IMG[id]={el:null,ok:false}; };
+  IMG[id]={el:im,ok:false};
+}
+
+/* ---------- MONSTER INSTANCE ---------- */
+function statAt(base,lvl){return Math.floor(base*lvl/25)+5;}
+function makeMon(id,lvl){
+  const s=SP[id];
+  const hp=Math.floor(s.base.hp*lvl/20)+lvl+8;
+  const m={id,lvl,xp:0,
+    maxhp:hp,hp:hp,
+    atk:statAt(s.base.atk,lvl),def:statAt(s.base.def,lvl),spd:statAt(s.base.spd,lvl),
+    moves:[...s.moves]};
+  // apply learned moves up to level
+  for(const [ml,mv] of Object.entries(s.learn)){ if(lvl>=+ml && !m.moves.includes(mv)){ m.moves.push(mv); if(m.moves.length>4)m.moves.shift(); } }
+  return m;
+}
+function xpNeeded(lvl){return lvl*lvl*8;}
+
+/* ---------- MAPS (multi-area engine) ---------- */
+// Legend: . grass  , path  T tree  W water  S sign  H house  P prof  D door/warp
+//         # tallgrass  = interior wall  _ floor  M mum(heal)  G gym leader
+const MAPS = {
+  island:{
+    name:"Sunhaven Town",
+    wild:["fintad","beabloom","bouldix","voltuff","nimbup"],
+    warps:[
+      {x:3,y:3, to:"home", tx:4, ty:5, dir:"up"},
+      {x:10,y:13, to:"gym", tx:4, ty:6, dir:"up"}
+    ],
+    rows:[
+    "TTTTTTTTTTTTTTTTTTTT",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,HH,,,,,SS,,,,HH,,T",
+    "T,HD,,,,,,,,,,,HH,,T",
+    "T,,,,,,,P,,,,,,,,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,,,,####,,,####,,,T",
+    "T,,,,####,,,####,,,T",
+    "TWWW,####,,,####,,,T",
+    "TWWW,,,,,,S,,,,,,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,,####,,,,,,####,,T",
+    "T,,####,,HHH,,##,,,T",
+    "T,,####,,HDH,,##,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "T,,,,,,,,,,,,,,,,,,T",
+    "TTTTTTTTTTTTTTTTTTTT"]
+  },
+  home:{
+    name:"Home",
+    warps:[{x:4,y:6, to:"island", tx:3, ty:4, dir:"down"}],
+    rows:[
+    "==========",
+    "=________=",
+    "=___M____=",
+    "=________=",
+    "=________=",
+    "=________=",
+    "====D=====",
+    "=========="]
+  },
+  gym:{
+    name:"Leaf Gym",
+    warps:[{x:4,y:7, to:"island", tx:10, ty:14, dir:"down"}],
+    rows:[
+    "==========",
+    "=________=",
+    "=___G____=",
+    "=________=",
+    "=________=",
+    "=___``___=",
+    "=________=",
+    "====D=====",
+    "=========="]
+  }
+};
+// build char grids
+for(const k in MAPS){ MAPS[k].grid = MAPS[k].rows.map(r=>r.split("")); }
+function curMap(){return MAPS[state.map];}
+function grid(){return curMap().grid;}
+function gW(){return grid()[0].length;}
+function gH(){return grid().length;}
+function tileAt(x,y){const g=grid(); if(x<0||y<0||y>=g.length||x>=g[0].length) return "="; return g[y][x];}
+function walkable(x,y){
+  const t=tileAt(x,y);
+  if("TWHFPG=M".includes(t)) return false;
+  return true;
+}
+function isTall(x,y){return !!curMap().wild && tileAt(x,y)==="#";}
+function warpAt(x,y){const w=curMap().warps; if(!w)return null; return w.find(p=>p.x===x&&p.y===y)||null;}
+
+/* ---------- STATE ---------- */
+let state = null;
+function freshState(){
+  return {
+    map:"island", px:9, py:5, dir:"down",
+    party:[], bag:{balls:5,potions:3},
+    badges:0, gymDone:false, hasStarter:false, starterId:null,
+    flags:{}
+  };
+}
+
+/* ---------- RENDER OVERWORLD ---------- */
+const COL={
+  ",":"#9bbc0f",".":"#8bac0f","#":"#6b8e23","T":"#2e5a1e","W":"#3b7dd8",
+  "H":"#b06a3a","S":"#c9a24b","F":"#8a6a3a","P":"#c96a6a","G":"#7a1f3d","b":"#c9a24b",
+  "=":"#4a4a3a","_":"#caa96a","D":"#7a4a1a","M":"#caa96a","`":"#7a9a3a"
+};
+function drawTile(sx,sy,t){
+  ctx.fillStyle=COL[t]||"#9bbc0f"; ctx.fillRect(sx,sy,TILE,TILE);
+  if(t==="#"){ctx.fillStyle="#4f6d16";for(let i=0;i<4;i++){ctx.fillRect(sx+2+i*4,sy+4+((i%2)*4),2,6);}}
+  if(t==="T"){ctx.fillStyle="#1f3f14";ctx.fillRect(sx+3,sy+2,10,10);ctx.fillStyle="#5a3a1a";ctx.fillRect(sx+6,sy+11,4,4);}
+  if(t==="W"){ctx.fillStyle="#2f6bc0";ctx.fillRect(sx+2,sy+6,5,2);ctx.fillRect(sx+9,sy+10,5,2);}
+  if(t==="H"){ctx.fillStyle="#7a3f1f";ctx.fillRect(sx,sy,TILE,5);ctx.fillStyle="#e8d070";ctx.fillRect(sx+5,sy+8,6,8);}
+  if(t==="S"){ctx.fillStyle="#5a3a1a";ctx.fillRect(sx+6,sy+8,4,8);ctx.fillStyle="#e8d070";ctx.fillRect(sx+3,sy+3,10,7);}
+  if(t==="P"){ctx.fillStyle="#fff";ctx.fillRect(sx+4,sy+2,8,6);ctx.fillStyle="#0f380f";ctx.fillRect(sx+6,sy+9,4,6);}
+  if(t==="F"){ctx.fillStyle="#5a3a1a";ctx.fillRect(sx,sy+6,TILE,3);ctx.fillRect(sx+6,sy,3,TILE);}
+  if(t==="G"){ctx.fillStyle="#f2c40f";ctx.fillRect(sx+5,sy+2,6,5);ctx.fillStyle="#0f380f";ctx.fillRect(sx+4,sy+8,8,7);}
+  if(t==="b"){ctx.fillStyle="#7a5a2a";ctx.fillRect(sx+2,sy+2,12,12);ctx.fillStyle="#e8d070";ctx.fillRect(sx+6,sy+6,4,4);}
+  if(t==="="){ctx.fillStyle="#3a3a2c";ctx.fillRect(sx,sy,TILE,3);ctx.fillRect(sx,sy+8,TILE,3);ctx.fillStyle="#5a5a46";ctx.fillRect(sx+7,sy+3,2,5);}
+  if(t==="D"){ctx.fillStyle="#5a340f";ctx.fillRect(sx+3,sy+1,10,14);ctx.fillStyle="#e8d070";ctx.fillRect(sx+10,sy+7,2,2);}
+  if(t==="`"){ctx.fillStyle="#6a8a2a";ctx.fillRect(sx+2,sy+2,12,12);}
+  if(t==="M"){ctx.fillStyle="#7a3f1f";ctx.fillRect(sx+4,sy+2,8,6);ctx.fillStyle="#f2d0a4";ctx.fillRect(sx+5,sy+7,6,4);ctx.fillStyle="#c96a9a";ctx.fillRect(sx+5,sy+10,6,5);}
+}
+function drawPlayer(sx,sy){
+  ctx.fillStyle="#c0392b"; ctx.fillRect(sx+4,sy+2,8,7);      // head/cap
+  ctx.fillStyle="#f2d0a4"; ctx.fillRect(sx+5,sy+7,6,4);      // face
+  ctx.fillStyle="#0f380f";
+  if(state.dir==="down"){ctx.fillRect(sx+6,sy+8,1,1);ctx.fillRect(sx+9,sy+8,1,1);}
+  if(state.dir==="up"){}
+  if(state.dir==="left"){ctx.fillRect(sx+6,sy+8,1,1);}
+  if(state.dir==="right"){ctx.fillRect(sx+9,sy+8,1,1);}
+  ctx.fillStyle="#2f4fd0"; ctx.fillRect(sx+5,sy+10,6,5);     // body
+}
+function renderWorld(){
+  ctx.clearRect(0,0,160,160);
+  const half=Math.floor(VIEW/2);
+  const W=gW(), H=gH();
+  let camx=state.px-half, camy=state.py-half;
+  camx=Math.max(0,Math.min(Math.max(0,W-VIEW),camx));
+  camy=Math.max(0,Math.min(Math.max(0,H-VIEW),camy));
+  for(let y=0;y<VIEW;y++)for(let x=0;x<VIEW;x++){
+    const mx=camx+x,my=camy+y;
+    const t=tileAt(mx,my);
+    drawTile(x*TILE,y*TILE,t);
+  }
+  drawPlayer((state.px-camx)*TILE,(state.py-camy)*TILE);
+}
+
+/* ---------- BATTLE SPRITE DRAW ----------
+   Draws the creature's PNG centered in a box of the given size.
+   size = pixel width/height of the drawn creature on the 160x160 canvas.
+   flip = mirror horizontally (used for the player's creature facing the foe).
+   If the image isn't loaded, draws a coloured circle with the type initial. */
+function drawMon(id,cx,cy,size,flip){
+  const rec=IMG[id]; const s=SP[id];
+  if(rec && rec.ok && rec.el){
+    const img=rec.el;
+    // fit image into a square 'size' box, preserving aspect ratio
+    const iw=img.naturalWidth||1, ih=img.naturalHeight||1;
+    const scale=Math.min(size/iw,size/ih);
+    const w=iw*scale, h=ih*scale;
+    const dx=cx+(size-w)/2, dy=cy+(size-h)/2;
+    ctx.save();
+    if(flip){ ctx.translate(dx+w,dy); ctx.scale(-1,1); ctx.drawImage(img,0,0,w,h); }
+    else{ ctx.drawImage(img,dx,dy,w,h); }
+    ctx.restore();
+  } else {
+    // fallback circle so battles always work even mid-setup
+    const r=size*0.42, mx=cx+size/2, my=cy+size/2;
+    ctx.fillStyle=s.col||"#888"; ctx.beginPath(); ctx.arc(mx,my,r,0,7); ctx.fill();
+    ctx.fillStyle="#0f380f"; ctx.beginPath(); ctx.arc(mx-r*0.35,my-r*0.15,r*0.14,0,7); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx+r*0.35,my-r*0.15,r*0.14,0,7); ctx.fill();
+  }
+}
+
+/* ---------- GAME MODES ---------- */
+let mode="title"; // title, world, dialog, menu, battle
+let busy=false;
+
+/* ---------- TEXT BOX ---------- */
+const box=document.getElementById('box'), boxText=document.getElementById('boxText'), boxMore=document.getElementById('boxMore');
+let msgQueue=[], msgCb=null;
+function say(lines,cb){
+  msgQueue = Array.isArray(lines)?[...lines]:[lines];
+  msgCb=cb||null; box.style.display="block"; nextMsg();
+}
+function nextMsg(){
+  if(msgQueue.length===0){ box.style.display="none"; const c=msgCb; msgCb=null; if(c)c(); return; }
+  boxText.textContent=msgQueue.shift();
+  boxMore.style.display=msgQueue.length?"block":"none";
+}
+
+/* ---------- MAIN MENU ---------- */
+const mainMenu=document.getElementById('mainMenu');
+let menuIdx=0;
+function openMenu(){mode="menu";menuIdx=0;drawMenuSel();mainMenu.style.display="block";}
+function closeMenu(){mainMenu.style.display="none";mode="world";}
+function drawMenuSel(){[...mainMenu.children].forEach((r,i)=>r.classList.toggle('sel',i===menuIdx));}
+
+/* ---------- BADGES TAG ---------- */
+function updateBadge(){const t=document.getElementById('badgeTag');t.textContent="◇ Badges: "+state.badges;t.style.display=mode==="world"?"block":"none";}
+
+/* ---------- SAVE ---------- */
+function save(){try{localStorage.setItem("monisles",JSON.stringify(state));return true;}catch(e){return false;}}
+function load(){try{const d=localStorage.getItem("monisles");return d?JSON.parse(d):null;}catch(e){return null;}}
+function hasSave(){try{return !!localStorage.getItem("monisles");}catch(e){return false;}}
+
+/* ---------- MOVEMENT ---------- */
+function tryMove(dx,dy,d){
+  if(mode!=="world"||busy)return;
+  state.dir=d;
+  const nx=state.px+dx, ny=state.py+dy;
+  if(walkable(nx,ny)){
+    state.px=nx; state.py=ny;
+    const w=warpAt(nx,ny);
+    if(w){ doWarp(w); return; }
+    renderWorld();
+    if(isTall(nx,ny) && Math.random()<0.18){ startWildBattle(); }
+  } else { renderWorld(); }
+}
+function doWarp(w){
+  state.map=w.to; state.px=w.tx; state.py=w.ty; state.dir=w.dir||"down";
+  renderWorld(); updateBadge(); save();
+  const nm=MAPS[w.to].name;
+  mode="dialog"; say([nm],()=>mode="world");
+}
+
+/* ---------- INTERACT (A button in world) ---------- */
+function facingTile(){
+  let dx=0,dy=0;
+  if(state.dir==="up")dy=-1; if(state.dir==="down")dy=1;
+  if(state.dir==="left")dx=-1; if(state.dir==="right")dx=1;
+  return {x:state.px+dx,y:state.py+dy};
+}
+function interact(){
+  if(mode==="dialog"){nextMsg();return;}
+  if(mode!=="world"||busy)return;
+  const f=facingTile();
+  const t=tileAt(f.x,f.y);
+  if(t==="P"){ profTalk(); }
+  else if(t==="G"){ gymTalk(); }
+  else if(t==="S"){ signTalk(f); }
+  else if(t==="M"){ momTalk(); }
+  else if(t==="H"){ mode="dialog"; say(["It's a cosy island house.","The door is locked."],()=>mode="world"); }
+}
+function momTalk(){
+  mode="dialog";
+  const hurt=state.party.some(m=>m.hp<m.maxhp);
+  if(state.party.length===0){ say(["MUM: Go find a partner from","Prof. Olive first, love!"],()=>mode="world"); return; }
+  say(["MUM: Let me patch up your team."],()=>{
+    healParty();
+    say(["Your monsters are full of energy!"],()=>{mode="world";save();});
+  });
+}
+function signTalk(f){
+  mode="dialog";
+  // pick sign text by rough location
+  if(f.y<6) say(["SUNHAVEN TOWN","A quiet island where trainers begin."],()=>mode="world");
+  else say(["ROUTE 1","Tall grass ahead — wild monsters live there!"],()=>mode="world");
+}
+function profTalk(){
+  mode="dialog";
+  if(!state.hasStarter){
+    say(["PROF. OLIVE: Welcome to Monster Isles!","Wild monsters roam the tall grass.","Pick a partner to start your journey."],()=>{
+      chooseStarter();
+    });
+  } else {
+    say(["PROF. OLIVE: Fill the tall grass with new","friends, then challenge the Gym in the","south to earn your first badge!"],()=>mode="world");
+  }
+}
+function chooseStarter(){
+  mode="dialog";
+  starterPick=0; showStarterMenu();
+}
+let starterPick=0;
+const STARTERS=["beafern","fintad","beabloom","bouldix","voltuff","nimbup"];
+function showStarterMenu(){
+  const opts=STARTERS.map(id=>SP[id].name+" ("+SP[id].type+")");
+  say(["Choose: "+opts[starterPick],"◀ ▶ to change, A to choose"],null);
+  mode="starter";
+}
+function confirmStarter(){
+  const id=STARTERS[starterPick];
+  state.party=[makeMon(id,5)];
+  state.hasStarter=true;
+  state.starterId=id;
+  mode="dialog";
+  say([SP[id].name+" ("+SP[id].type+") joins your team!","(Tip: press B for the menu anytime.)"],()=>{mode="world";save();});
+}
+
+function gymTalk(){
+  mode="dialog";
+  if(!state.hasStarter){ say(["GYM LEADER FERN: Come back when you","have a monster of your own!"],()=>mode="world"); return; }
+  if(state.gymDone){ say(["FERN: You've earned the Leaf Badge.","You're a fine trainer!"],()=>mode="world"); return; }
+  say(["FERN: I'm Fern, the Leaf Gym Leader.","Beat my team and the Leaf Badge is yours!","Ready? Here we go!"],()=>{
+    startGymBattle();
+  });
+}
+
+/* ================= BATTLE ENGINE ================= */
+const battleHud=document.getElementById('battleHud');
+const battleMenu=document.getElementById('battleMenu'), battleGrid=document.getElementById('battleGrid');
+let B=null; // battle context
+
+function firstAlive(party){return party.find(m=>m.hp>0);}
+function healParty(){state.party.forEach(m=>m.hp=m.maxhp);}
+
+function startWildBattle(){
+  let pool=(curMap().wild||["fintad","beabloom","bouldix","voltuff","nimbup"]).slice();
+  // don't spawn the creature you chose as your starter (feels odd to catch a copy early)
+  if(state.starterId && pool.length>1) pool=pool.filter(id=>id!==state.starterId);
+  const id=pool[Math.floor(Math.random()*pool.length)];
+  const lvl=3+Math.floor(Math.random()*4);
+  beginBattle(makeMon(id,lvl),null);
+}
+function startGymBattle(){
+  // gym leader uses a small team; picks types that punish sloppy play
+  const team=[makeMon("beabloom",6),makeMon("bouldix",8)];
+  beginBattle(team[0],{type:"gym",team,idx:0});
+}
+function beginBattle(foe,meta){
+  const me=firstAlive(state.party);
+  if(!me){ return; }
+  B={foe,me,meta,turn:0,fleeTries:0};
+  mode="battle";
+  battleHud.style.display="block";
+  updateBadge();
+  renderBattleScene();
+  refreshHud();
+  const kind=meta?"":"Wild ";
+  say([kind+SP[foe.id].name+" appeared!","Go, "+SP[me.id].name+"!"],()=>openBattleMenu());
+}
+function renderBattleScene(){
+  ctx.clearRect(0,0,160,160);
+  // sky/ground bands
+  ctx.fillStyle="#9bbc0f";ctx.fillRect(0,0,160,160);
+  ctx.fillStyle="#8bac0f";ctx.fillRect(0,96,160,64);
+  ctx.strokeStyle="#5a7a1a";ctx.beginPath();ctx.moveTo(0,96);ctx.lineTo(160,96);ctx.stroke();
+  // platforms
+  ctx.fillStyle="#7a9a1a";ctx.beginPath();ctx.ellipse(118,64,34,10,0,0,7);ctx.fill();
+  ctx.beginPath();ctx.ellipse(46,132,40,12,0,0,7);ctx.fill();
+  // foe (top right), me (bottom left, flipped, bigger since it's "closer")
+  if(B){ drawMon(B.foe.id,92,14,54,false); drawMon(B.me.id,10,74,72,true); }
+}
+function refreshHud(){
+  document.getElementById('foeName').textContent=SP[B.foe.id].name.toUpperCase();
+  document.getElementById('foeLvl').textContent="L"+B.foe.lvl;
+  document.getElementById('foeHp').style.width=Math.max(0,B.foe.hp/B.foe.maxhp*100)+"%";
+  document.getElementById('meName').textContent=SP[B.me.id].name.toUpperCase();
+  document.getElementById('meLvl').textContent="L"+B.me.lvl;
+  document.getElementById('meHp').style.width=Math.max(0,B.me.hp/B.me.maxhp*100)+"%";
+  document.getElementById('meHpNum').textContent=Math.max(0,B.me.hp)+"/"+B.me.maxhp;
+  colorHp('foeHp',B.foe); colorHp('meHp',B.me);
+}
+function colorHp(elid,m){const f=m.hp/m.maxhp;const el=document.getElementById(elid);
+  el.style.background = f>.5?"#2e7d32":f>.2?"#e8a11a":"#c0392b";}
+
+let bmenuMode="root", bmenuIdx=0;
+function openBattleMenu(){
+  bmenuMode="root"; bmenuIdx=0; buildBattleMenu(); battleMenu.style.display="block"; box.style.display="none";
+}
+function buildBattleMenu(){
+  battleGrid.innerHTML="";
+  let items=[];
+  if(bmenuMode==="root") items=["FIGHT","BAG","CATCH","RUN"];
+  else if(bmenuMode==="fight") items=B.me.moves.map(k=>MOVES[k].name);
+  items.forEach((label,i)=>{
+    const d=document.createElement('div'); d.className="row"+(i===bmenuIdx?" sel":""); d.textContent=label; d.dataset.i=i;
+    battleGrid.appendChild(d);
+  });
+}
+function battleMenuMove(dir){
+  const n=battleGrid.children.length;
+  if(dir==="up")bmenuIdx=(bmenuIdx-2+n)%n;
+  else if(dir==="down")bmenuIdx=(bmenuIdx+2)%n;
+  else if(dir==="left")bmenuIdx=(bmenuIdx-1+n)%n;
+  else if(dir==="right")bmenuIdx=(bmenuIdx+1)%n;
+  buildBattleMenu();
+}
+function battleMenuSelect(){
+  if(bmenuMode==="root"){
+    if(bmenuIdx===0){bmenuMode="fight";bmenuIdx=0;buildBattleMenu();}
+    else if(bmenuIdx===1){useBag();}
+    else if(bmenuIdx===2){tryCatch();}
+    else if(bmenuIdx===3){tryRun();}
+  } else if(bmenuMode==="fight"){
+    const mv=B.me.moves[bmenuIdx];
+    doTurn(mv);
+  }
+}
+function battleBack(){ if(bmenuMode==="fight"){bmenuMode="root";bmenuIdx=0;buildBattleMenu();} }
+
+function calcDmg(att,def,move){
+  const m=MOVES[move];
+  const eff=CHART[m.type][SP[def.id].type];
+  const stab = SP[att.id].type===m.type ? 1.5 : 1;
+  const base=((2*att.lvl/5+2)*m.pow*att.atk/Math.max(1,def.def))/50+2;
+  const dmg=Math.max(1,Math.floor(base*eff*stab*(0.85+Math.random()*0.15)));
+  return {dmg,eff};
+}
+function effWord(e){return e>1?"It's super effective!":e<1?"It's not very effective...":"";}
+
+function doTurn(playerMove){
+  battleMenu.style.display="none"; busy=true;
+  const foeMove=B.foe.moves[Math.floor(Math.random()*B.foe.moves.length)];
+  const meFirst=B.me.spd>=B.foe.spd;
+  const seq=meFirst
+    ? [()=>attack(B.me,B.foe,playerMove,true), ()=>attack(B.foe,B.me,foeMove,false)]
+    : [()=>attack(B.foe,B.me,foeMove,false), ()=>attack(B.me,B.foe,playerMove,true)];
+  runSeq(seq,0);
+}
+function runSeq(seq,i){
+  if(i>=seq.length){ afterTurn(); return; }
+  seq[i](()=>runSeq(seq,i+1));
+}
+function attack(att,def,move,byPlayer){
+  return (done)=>{
+    if(att.hp<=0){done();return;}
+    const {dmg,eff}=calcDmg(att,def,move);
+    def.hp=Math.max(0,def.hp-dmg);
+    refreshHud();
+    const who=byPlayer?SP[att.id].name:"Foe "+SP[att.id].name;
+    const msgs=[who+" used "+MOVES[move].name+"!"];
+    const ew=effWord(eff); if(ew)msgs.push(ew);
+    say(msgs,()=>{ if(def.hp<=0){ handleFaint(def,byPlayer,done);} else done(); });
+  };
+}
+function handleFaint(def,byPlayer,done){
+  if(byPlayer){ // foe fainted
+    const gained=Math.floor(B.foe.lvl*6+8);
+    say([SP[def.id].name+" fainted!",SP[B.me.id].name+" gained "+gained+" XP!"],()=>{
+      gainXp(B.me,gained,()=>{
+        if(B.meta && B.meta.type==="gym"){ nextGymMon(done); }
+        else endBattle("win");
+      });
+    });
+  } else { // my mon fainted
+    B.me.hp=0; refreshHud();
+    say([SP[def.id].name+" fainted!"],()=>{
+      const next=firstAlive(state.party);
+      if(next){ B.me=next; renderBattleScene(); refreshHud(); say(["Go, "+SP[next.id].name+"!"],()=>{busy=false;openBattleMenu();}); }
+      else { say(["You have no monsters left!","You scramble back to town..."],()=>{ whiteout(); }); }
+    });
+  }
+}
+function nextGymMon(done){
+  B.meta.idx++;
+  if(B.meta.idx>=B.meta.team.length){
+    // won gym
+    state.gymDone=true; state.badges=1;
+    say(["FERN: Impressive! You've earned...","the LEAF BADGE! ◆","Your monsters will now obey fully."],()=>{ endBattle("win"); });
+  } else {
+    B.foe=B.meta.team[B.meta.idx]; renderBattleScene(); refreshHud();
+    say(["FERN sends out "+SP[B.foe.id].name+"!"],()=>{ busy=false; done? null:null; openBattleMenu(); });
+  }
+}
+function gainXp(mon,amt,cb){
+  mon.xp+=amt;
+  let leveled=false;
+  while(mon.xp>=xpNeeded(mon.lvl)){
+    mon.xp-=xpNeeded(mon.lvl); mon.lvl++; leveled=true;
+    // recompute stats, keep hp ratio
+    const ratio=mon.hp/mon.maxhp;
+    const fresh=makeMon(mon.id,mon.lvl);
+    mon.maxhp=fresh.maxhp; mon.atk=fresh.atk; mon.def=fresh.def; mon.spd=fresh.spd;
+    mon.hp=Math.max(1,Math.round(mon.maxhp*ratio));
+    // learn new moves
+    const learn=SP[mon.id].learn[mon.lvl];
+    if(learn && !mon.moves.includes(learn)){ mon.moves.push(learn); if(mon.moves.length>4)mon.moves.shift(); }
+  }
+  refreshHud();
+  if(leveled){ say([SP[mon.id].name+" grew to L"+mon.lvl+"!"],cb); } else cb();
+}
+function afterTurn(){
+  if(B.foe.hp<=0||B.me.hp<=0){ return; } // handled in faint
+  busy=false; openBattleMenu();
+}
+
+function tryCatch(){
+  if(B.meta){ battleMenu.style.display="none"; say(["You can't catch another","trainer's monster!"],()=>openBattleMenu()); return; }
+  if(state.bag.balls<=0){ battleMenu.style.display="none"; say(["You're out of Catch Orbs!"],()=>openBattleMenu()); return; }
+  battleMenu.style.display="none"; busy=true; state.bag.balls--;
+  const s=SP[B.foe.id];
+  const hpFactor=1-(B.foe.hp/B.foe.maxhp)*0.6; // lower hp = easier
+  const chance=Math.min(0.9, (s.catch/255)*1.2*hpFactor + 0.15);
+  say(["You threw a Catch Orb...","(Orbs left: "+state.bag.balls+")"],()=>{
+    if(Math.random()<chance){
+      say(["Gotcha! "+s.name+" was caught!"],()=>{
+        if(state.party.length<6){ state.party.push(B.foe); }
+        say([state.party.length<7?SP[B.foe.id].name+" joined your team!":"Team full — released."],()=>{save();endBattle("catch");});
+      });
+    } else {
+      say([s.name+" broke free!"],()=>{
+        // foe attacks back
+        busy=true;
+        const fm=B.foe.moves[Math.floor(Math.random()*B.foe.moves.length)];
+        attack(B.foe,B.me,fm,false)(()=>{ if(B.me.hp<=0){/*handled*/}else{busy=false;openBattleMenu();} });
+      });
+    }
+  });
+}
+function useBag(){
+  battleMenu.style.display="none";
+  if(state.bag.potions<=0){ say(["No Potions left!"],()=>openBattleMenu()); return; }
+  if(B.me.hp>=B.me.maxhp){ say([SP[B.me.id].name+" is already full!"],()=>openBattleMenu()); return; }
+  busy=true; state.bag.potions--;
+  const heal=Math.min(B.me.maxhp-B.me.hp,25); B.me.hp+=heal; refreshHud();
+  say(["Used Potion. +"+heal+" HP.","(Potions left: "+state.bag.potions+")"],()=>{
+    // costs your turn: foe attacks
+    const fm=B.foe.moves[Math.floor(Math.random()*B.foe.moves.length)];
+    attack(B.foe,B.me,fm,false)(()=>{ if(B.me.hp>0){busy=false;openBattleMenu();} });
+  });
+}
+function tryRun(){
+  if(B.meta){ battleMenu.style.display="none"; say(["No running from a Gym battle!"],()=>openBattleMenu()); return; }
+  battleMenu.style.display="none"; busy=true; B.fleeTries++;
+  const ok = B.me.spd>=B.foe.spd || Math.random()<0.6;
+  if(ok){ say(["Got away safely!"],()=>endBattle("run")); }
+  else { say(["Couldn't escape!"],()=>{ const fm=B.foe.moves[Math.floor(Math.random()*B.foe.moves.length)];
+    attack(B.foe,B.me,fm,false)(()=>{ if(B.me.hp>0){busy=false;openBattleMenu();} }); }); }
+}
+function endBattle(){
+  battleHud.style.display="none"; battleMenu.style.display="none"; box.style.display="none";
+  B=null; busy=false; mode="world"; save(); renderWorld(); updateBadge();
+}
+function whiteout(){
+  battleHud.style.display="none"; battleMenu.style.display="none";
+  healParty(); state.map="island"; state.px=9; state.py=5; state.dir="down";
+  B=null; busy=false; mode="world"; save(); renderWorld(); updateBadge();
+  say(["Your monsters were healed at home."],null);
+}
+
+/* ---------- PARTY / BAG / BADGES VIEWS (simple text) ---------- */
+function showParty(){
+  mode="dialog";
+  if(state.party.length===0){ say(["No monsters yet.","Talk to Prof. Olive!"],()=>mode="world"); return; }
+  const lines=state.party.map(m=>SP[m.id].name+" L"+m.lvl+" ("+m.hp+"/"+m.maxhp+"HP) "+SP[m.id].type);
+  say(lines,()=>mode="world");
+}
+function showBag(){ mode="dialog"; say(["BAG:","Catch Orbs x"+state.bag.balls,"Potions x"+state.bag.potions],()=>mode="world"); }
+function showBadges(){ mode="dialog"; say(state.badges? ["◆ LEAF BADGE","Earned from Gym Leader Fern!"]:["No badges yet.","Beat the southern Gym!"],()=>mode="world"); }
+
+/* ================= INPUT ================= */
+function press(dir){
+  if(mode==="world"){
+    if(dir==="up")tryMove(0,-1,"up");
+    else if(dir==="down")tryMove(0,1,"down");
+    else if(dir==="left")tryMove(-1,0,"left");
+    else if(dir==="right")tryMove(1,0,"right");
+  } else if(mode==="menu"){
+    if(dir==="up")menuIdx=(menuIdx-1+5)%5;
+    else if(dir==="down")menuIdx=(menuIdx+1)%5;
+    drawMenuSel();
+  } else if(mode==="starter"){
+    const n=STARTERS.length;
+    if(dir==="left"){starterPick=(starterPick-1+n)%n;showStarterMenu();}
+    else if(dir==="right"){starterPick=(starterPick+1)%n;showStarterMenu();}
+  } else if(mode==="battle" && !busy && battleMenu.style.display==="block"){
+    battleMenuMove(dir);
+  }
+}
+function pressA(){
+  if(mode==="title")return;
+  if(mode==="dialog"){ nextMsg(); return; }
+  if(mode==="starter"){ confirmStarter(); return; }
+  if(mode==="world"){ interact(); return; }
+  if(mode==="menu"){
+    if(menuIdx===0){closeMenu();showParty();}
+    else if(menuIdx===1){closeMenu();showBag();}
+    else if(menuIdx===2){closeMenu();showBadges();}
+    else if(menuIdx===3){closeMenu();const ok=save();mode="dialog";say([ok?"Game saved.":"Save blocked (works once deployed)."],()=>mode="world");}
+    else closeMenu();
+    return;
+  }
+  if(mode==="battle"){
+    // a battle message is showing (menu not up yet) -> advance it
+    if(box.style.display==="block"){ nextMsg(); return; }
+    if(!busy && battleMenu.style.display==="block"){ battleMenuSelect(); return; }
+  }
+}
+function pressB(){
+  if(mode==="world"){ openMenu(); return; }
+  if(mode==="menu"){ closeMenu(); return; }
+  if(mode==="dialog"){ nextMsg(); return; }
+  if(mode==="battle"){
+    if(box.style.display==="block"){ nextMsg(); return; }
+    if(!busy){ battleBack(); return; }
+  }
+}
+
+/* wire buttons: press-and-hold repeat for dpad */
+function bindHold(id,fn){
+  const el=document.getElementById(id); let t=null,iv=null;
+  const start=e=>{e.preventDefault();fn();t=setTimeout(()=>{iv=setInterval(fn,140);},260);};
+  const stop=e=>{if(e)e.preventDefault();clearTimeout(t);clearInterval(iv);};
+  el.addEventListener('touchstart',start,{passive:false});
+  el.addEventListener('touchend',stop);el.addEventListener('touchcancel',stop);
+  el.addEventListener('mousedown',start);el.addEventListener('mouseup',stop);el.addEventListener('mouseleave',stop);
+}
+function bindTap(id,fn){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();fn();},{passive:false});
+  el.addEventListener('mousedown',e=>{e.preventDefault();fn();});
+}
+bindHold('up',()=>press('up')); bindHold('down',()=>press('down'));
+bindHold('left',()=>press('left')); bindHold('right',()=>press('right'));
+bindTap('btnA',pressA); bindTap('btnB',pressB);
+
+// keyboard for desktop
+document.addEventListener('keydown',e=>{
+  const k=e.key;
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","Enter","z","x","Escape"].includes(k))e.preventDefault();
+  if(k==="ArrowUp")press('up'); else if(k==="ArrowDown")press('down');
+  else if(k==="ArrowLeft")press('left'); else if(k==="ArrowRight")press('right');
+  else if(k==="z"||k==="Enter"||k===" ")pressA();
+  else if(k==="x"||k==="Escape")pressB();
+});
+
+/* ---------- START ---------- */
+document.getElementById('startBtn').addEventListener('click',()=>{
+  state=freshState(); document.getElementById('title').style.display="none";
+  mode="world"; renderWorld(); updateBadge();
+  say(["Welcome to Monster Isles!","Walk to PROF. OLIVE (the person) to","choose your first partner."],null);
+});
+document.getElementById('continueBtn').addEventListener('click',()=>{
+  const d=load(); if(!d){return;} state=d;
+  if(!state.map||!MAPS[state.map]){ state.map="island"; state.px=9; state.py=5; }
+  document.getElementById('title').style.display="none";
+  mode="world"; renderWorld(); updateBadge();
+});
+if(hasSave()){ document.getElementById('continueBtn').style.display="inline-block"; }
+
+// initial paint under title
+state=freshState(); renderWorld();
+</script>
+</body>
+</html>
